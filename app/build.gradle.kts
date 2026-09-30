@@ -1,6 +1,5 @@
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
 }
 
 android {
@@ -19,6 +18,10 @@ android {
         debug { isMinifyEnabled = false }
         release { isMinifyEnabled = false }
     }
+}
+
+kotlin {
+    jvmToolchain(17)
 }
 
 dependencies {
