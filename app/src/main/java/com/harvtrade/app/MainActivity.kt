@@ -48,7 +48,7 @@ class MainActivity : Activity() {
         window.navigationBarColor = Color.rgb(8, 11, 16)
         buildUi()
         handler.post(countdown)
-        connectLive()
+        loadHistoryThenConnect()
     }
 
     override fun onDestroy() {
@@ -74,7 +74,7 @@ class MainActivity : Activity() {
         setContentView(ScrollView(this).apply { addView(root) })
 
         root.addView(tv("HARVTRADE", 25f, Color.WHITE))
-        statusText = tv("CONNECTING • secure market-data gateway", 12f, 0xFFFFD166.toInt())
+        statusText = tv("STARTING • preparing market data", 12f, 0xFFFFD166.toInt())
         root.addView(statusText)
 
         val row = LinearLayout(this).apply {
@@ -87,7 +87,7 @@ class MainActivity : Activity() {
                 setOnClickListener {
                     horizon = h
                     cycleRemaining = h
-                    liveStartedAt = System.currentTimeMillis()
+                    forecast = engine.generate(points, horizon)
                     updateUi()
                 }
             }
@@ -100,7 +100,7 @@ class MainActivity : Activity() {
         }
         root.addView(chart, LinearLayout.LayoutParams(-1, 420))
 
-        forecastText = tv("Forecast: WAITING FOR LIVE DATA", 24f, Color.WHITE)
+        forecastText = tv("Forecast: LOADING MARKET DATA", 24f, Color.WHITE)
         root.addView(forecastText)
 
         confidenceText = tv("Confidence: —", 18f)
@@ -127,36 +127,44 @@ class MainActivity : Activity() {
         )
     }
 
-    private fun connectLive() {
-        statusText.text = "AUTHENTICATING • private market stream"
-        SupabaseSession.ensureAnonymousSession(this) { token, error ->
+    private fun loadHistoryThenConnect() {
+        statusText.text = "LOADING • historical EUR/USD data"
+        MarketDataClient.fetchHistory("EUR/USD", 120) { history, error ->
             runOnUiThread {
-                if (token == null) {
-                    statusText.text = "AUTH ERROR • " + (error ?: "unknown")
-                    forecastText.text = "Forecast: NO LIVE DATA"
-                    analysisText.text =
-                        "Supabase anonymous sign-in did not return a session."
-                    return@runOnUiThread
+                if (history.isNotEmpty()) {
+                    points.clear()
+                    points.addAll(history.takeLast(240))
+                    lastLivePrice = points.last().price
+                    forecast = engine.generate(points, horizon)
+                    updateUi()
+                    statusText.text = "HISTORY READY • connecting live ticks"
+                } else {
+                    statusText.text =
+                        "DATA WARNING • " + (error ?: "no historical data")
                 }
-
-                statusText.text = "CONNECTING • Twelve Data live stream"
-                stream?.close()
-                stream = MarketStreamClient(
-                    token = token,
-                    symbol = "EUR/USD",
-                    onPrice = { time, price -> onLivePrice(time, price) },
-                    onStatus = { status -> statusText.text = status }
-                )
-                stream?.connect()
+                connectLive()
             }
         }
     }
 
+    private fun connectLive() {
+        statusText.text = "CONNECTING • live EUR/USD stream"
+        stream?.close()
+        stream = MarketStreamClient(
+            symbol = "EUR/USD",
+            onPrice = { time, price -> onLivePrice(time, price) },
+            onStatus = { status -> runOnUiThread { statusText.text = status } }
+        )
+        stream?.connect()
+    }
+
     private fun onLivePrice(time: Long, price: Double) {
-        if (!price.isFinite()) return
+        if (!price.isFinite() || price <= 0.0) return
 
         lastLivePrice = price
-        points += MarketPoint(time, price)
+        if (points.isEmpty() || points.last().price != price || points.last().time != time) {
+            points += MarketPoint(time, price)
+        }
         if (points.size > 240) points.removeAt(0)
 
         if (liveStartedAt == 0L) {
@@ -176,7 +184,7 @@ class MainActivity : Activity() {
 
         forecastText.text =
             if (points.size < 12) {
-                "Forecast: COLLECTING LIVE TICKS (" + points.size + "/12)"
+                "Forecast: COLLECTING DATA (" + points.size + "/12)"
             } else {
                 forecast.direction + " • " +
                     forecast.upProbability.roundToInt() + "% UP"
@@ -202,14 +210,17 @@ class MainActivity : Activity() {
             "Volatility: " + "%.4f".format(Locale.US, forecast.volatility) + "%\n" +
             "Expected move: " + "%.4f".format(Locale.US, forecast.expectedMovePct) + "%\n" +
             "Signal state: " + forecast.signal + "\n" +
-            "Live ticks: " + points.size + "\n" +
+            "Market samples: " + points.size + "\n" +
             "Updated: " + time
 
         chart.setData(points, forecast)
     }
 
     private fun recordVerification() {
-        if (!lastLivePrice.isFinite()) return
+        if (!lastLivePrice.isFinite()) {
+            statusText.text = "VERIFY • waiting for a live price"
+            return
+        }
 
         statusText.text =
             "VERIFIED LOCALLY • " +
