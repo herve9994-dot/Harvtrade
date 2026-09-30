@@ -1,5 +1,6 @@
 package com.harvtrade.app
 
+import android.app.Activity
 import android.graphics.Color
 import android.os.Bundle
 import android.os.Handler
@@ -11,10 +12,11 @@ import java.util.Date
 import java.util.Locale
 import kotlin.math.roundToInt
 
-class MainActivity : android.app.Activity() {
+class MainActivity : Activity() {
     private val engine = ForecastEngine()
     private val handler = Handler(Looper.getMainLooper())
     private val points = mutableListOf<MarketPoint>()
+
     private lateinit var chart: MarketChartView
     private lateinit var forecastText: TextView
     private lateinit var confidenceText: TextView
@@ -32,8 +34,8 @@ class MainActivity : android.app.Activity() {
     private val countdown = object : Runnable {
         override fun run() {
             if (liveStartedAt > 0L) {
-                val elapsed = ((System.currentTimeMillis() - liveStartedAt) / 1000L).toInt()
-                cycleRemaining = horizon - (elapsed % horizon)
+                val elapsed = (System.currentTimeMillis() - liveStartedAt) / 1000L
+                cycleRemaining = horizon - (elapsed % horizon).toInt()
                 updateUi()
             }
             handler.postDelayed(this, 250L)
@@ -81,7 +83,7 @@ class MainActivity : android.app.Activity() {
         }
         listOf(2, 5, 10, 15).forEach { h ->
             val button = Button(this).apply {
-                text = "\${h}s"
+                text = h.toString() + "s"
                 setOnClickListener {
                     horizon = h
                     cycleRemaining = h
@@ -100,8 +102,10 @@ class MainActivity : android.app.Activity() {
 
         forecastText = tv("Forecast: WAITING FOR LIVE DATA", 24f, Color.WHITE)
         root.addView(forecastText)
+
         confidenceText = tv("Confidence: —", 18f)
         root.addView(confidenceText)
+
         countdownText = tv("Countdown: waiting", 18f, 0xFFFFD166.toInt())
         root.addView(countdownText)
 
@@ -113,6 +117,7 @@ class MainActivity : android.app.Activity() {
             text = "VERIFY PREDICTION / RECORD OUTCOME"
             setOnClickListener { recordVerification() }
         })
+
         root.addView(
             tv(
                 "Research mode: live market data only. This APK never places real-money trades.",
@@ -127,9 +132,10 @@ class MainActivity : android.app.Activity() {
         SupabaseSession.ensureAnonymousSession(this) { token, error ->
             runOnUiThread {
                 if (token == null) {
-                    statusText.text = "AUTH ERROR • \${error ?: "unknown"}"
+                    statusText.text = "AUTH ERROR • " + (error ?: "unknown")
                     forecastText.text = "Forecast: NO LIVE DATA"
-                    analysisText.text = "Enable Supabase Anonymous Sign-Ins, then reopen Harvtrade."
+                    analysisText.text =
+                        "Supabase anonymous sign-in did not return a session."
                     return@runOnUiThread
                 }
 
@@ -148,11 +154,15 @@ class MainActivity : android.app.Activity() {
 
     private fun onLivePrice(time: Long, price: Double) {
         if (!price.isFinite()) return
+
         lastLivePrice = price
         points += MarketPoint(time, price)
         if (points.size > 240) points.removeAt(0)
 
-        if (liveStartedAt == 0L) liveStartedAt = System.currentTimeMillis()
+        if (liveStartedAt == 0L) {
+            liveStartedAt = System.currentTimeMillis()
+        }
+
         forecast = engine.generate(points, horizon)
         updateUi()
     }
@@ -163,33 +173,47 @@ class MainActivity : android.app.Activity() {
             "DOWN" -> 0xFFFF6B7A.toInt()
             else -> Color.LTGRAY
         }
+
         forecastText.text =
-            if (points.size < 12) "Forecast: COLLECTING LIVE TICKS (\${points.size}/12)"
-            else "\${forecast.direction} • \${forecast.upProbability.roundToInt()}% UP"
+            if (points.size < 12) {
+                "Forecast: COLLECTING LIVE TICKS (" + points.size + "/12)"
+            } else {
+                forecast.direction + " • " +
+                    forecast.upProbability.roundToInt() + "% UP"
+            }
         forecastText.setTextColor(directionColor)
 
         confidenceText.text =
-            "Confidence \${forecast.confidence.roundToInt()}% • Agreement \${forecast.agreement.roundToInt()}% • Data \${forecast.dataQuality.roundToInt()}%"
+            "Confidence " + forecast.confidence.roundToInt() +
+                "% • Agreement " + forecast.agreement.roundToInt() +
+                "% • Data " + forecast.dataQuality.roundToInt() + "%"
 
-        countdownText.text = "\${horizon}s horizon • next cycle: \${cycleRemaining.coerceAtLeast(0)}s"
+        countdownText.text =
+            horizon.toString() + "s horizon • next cycle: " +
+                cycleRemaining.coerceAtLeast(0) + "s"
 
         val price = if (lastLivePrice.isFinite()) lastLivePrice else 0.0
+        val time = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
+
         analysisText.text =
             "Symbol: EUR/USD\n" +
-            "Live price: \${"%.5f".format(Locale.US, price)}\n" +
-            "Momentum: \${"%.4f".format(Locale.US, forecast.momentum)}%\n" +
-            "Volatility: \${"%.4f".format(Locale.US, forecast.volatility)}%\n" +
-            "Expected move: \${"%.4f".format(Locale.US, forecast.expectedMovePct)}%\n" +
-            "Signal state: \${forecast.signal}\n" +
-            "Live ticks: \${points.size}\n" +
-            "Updated: \${SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())}"
+            "Live price: " + "%.5f".format(Locale.US, price) + "\n" +
+            "Momentum: " + "%.4f".format(Locale.US, forecast.momentum) + "%\n" +
+            "Volatility: " + "%.4f".format(Locale.US, forecast.volatility) + "%\n" +
+            "Expected move: " + "%.4f".format(Locale.US, forecast.expectedMovePct) + "%\n" +
+            "Signal state: " + forecast.signal + "\n" +
+            "Live ticks: " + points.size + "\n" +
+            "Updated: " + time
 
         chart.setData(points, forecast)
     }
 
     private fun recordVerification() {
         if (!lastLivePrice.isFinite()) return
+
         statusText.text =
-            "VERIFIED LOCALLY • \${"%.5f".format(Locale.US, lastLivePrice)} • no trade placed"
+            "VERIFIED LOCALLY • " +
+                "%.5f".format(Locale.US, lastLivePrice) +
+                " • no trade placed"
     }
 }
