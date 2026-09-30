@@ -175,13 +175,13 @@ class MainActivity : android.app.Activity() {
 
         val price = if (lastLivePrice.isFinite()) lastLivePrice else 0.0
         analysisText.text =
-            "Symbol: EUR/USD\\n" +
-            "Live price: \${"%.5f".format(Locale.US, price)}\\n" +
-            "Momentum: \${"%.4f".format(Locale.US, forecast.momentum)}%\\n" +
-            "Volatility: \${"%.4f".format(Locale.US, forecast.volatility)}%\\n" +
-            "Expected move: \${"%.4f".format(Locale.US, forecast.expectedMovePct)}%\\n" +
-            "Signal state: \${forecast.signal}\\n" +
-            "Live ticks: \${points.size}\\n" +
+            "Symbol: EUR/USD\n" +
+            "Live price: \${"%.5f".format(Locale.US, price)}\n" +
+            "Momentum: \${"%.4f".format(Locale.US, forecast.momentum)}%\n" +
+            "Volatility: \${"%.4f".format(Locale.US, forecast.volatility)}%\n" +
+            "Expected move: \${"%.4f".format(Locale.US, forecast.expectedMovePct)}%\n" +
+            "Signal state: \${forecast.signal}\n" +
+            "Live ticks: \${points.size}\n" +
             "Updated: \${SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())}"
 
         chart.setData(points, forecast)
